@@ -3,7 +3,6 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -12,31 +11,62 @@ import java.util.Scanner;
 
 /**
  * DownloadCleaner
- * ----------------
- * Ein einfaches Konsolenprogramm, das den Download-Ordner
- * nach Dateitypen sortiert. Geeignet als Schulungsprojekt.
+ * ---------------
+ * Konsolenprogramm, das einen gewählten Ordner (typischerweise den Download-Ordner)
+ * analysiert und Dateien nach Typ in Unterordner sortiert.
+ *
+ * Geeignet als Schulungsprojekt zum Üben von:
+ * - Arbeiten mit java.nio.file (Path, Files, DirectoryStream)
+ * - Konsolenein- und -ausgabe (Scanner, System.out)
+ * - Kontrollstrukturen (if, switch, Schleifen)
+ * - Einfacher Objektorientierung (innere Hilfsklassen)
+ * - Konfiguration über Textdatei (config.txt)
+ * - Logging und einfachem Undo-Mechanismus
  *
  * Erweiterungen:
- *  - Trockenlauf-Modus (Dry-Run): zeigt nur an, was verschoben würde
- *  - Konfigurierbare Kategorien über config.txt im gewählten Ordner
- *  - Log-Datei log.txt mit Zeitstempeln aller Verschiebe-Aktionen
- *  - Undo-light: letzte Sortierung anhand undo_last_sort.txt teilweise rückgängig machen
+ * - Trockenlauf-Modus (Dry-Run): zeigt nur an, was verschoben würde
+ * - Konfigurierbare Kategorien über config.txt im gewählten Ordner
+ * - Log-Datei log.txt mit Zeitstempeln aller Verschiebe-Aktionen
+ * - Undo-light: letzte Sortierung anhand undo_last_sort.txt teilweise rückgängig machen
  */
 public class DownloadCleaner {
 
+    /**
+     * Ein globaler Scanner zum Einlesen von Benutzereingaben über die Konsole.
+     */
     private static final Scanner SCANNER = new Scanner(System.in);
+
+    /**
+     * Format für Zeitstempel im Log.
+     * Beispiel: 2025-11-21 02:30:45
+     */
     private static final DateTimeFormatter LOG_TS_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // Kategorie-Konfiguration wird nach Auswahl des Ordners geladen
+    /**
+     * Kategorie-Konfiguration (Standardwerte + optionale config.txt).
+     * Wird nach Auswahl des Arbeitsordners geladen.
+     */
     private static KategorieKonfiguration KATEGORIEN;
 
+    /**
+     * Einstiegspunkt des Programms.
+     * Ablauf:
+     * 1. Begrüßung ausgeben.
+     * 2. Standard-Download-Ordner vorschlagen und Benutzerfrage.
+     * 3. Kategorie-Konfiguration laden (inkl. config.txt, falls vorhanden).
+     * 4. Menüschleife anzeigen, bis Benutzer das Programm beendet.
+     *
+     * @param args Kommandozeilenargumente (werden nicht verwendet).
+     */
     public static void main(String[] args) {
         System.out.println("===========================================");
         System.out.println("    DownloadCleaner – Schulungsprojekt");
         System.out.println("===========================================\n");
 
+        // Standard-Download-Ordner ermitteln (z. B. C:\Users\<Name>\Downloads)
         Path downloadDir = vorschlagDownloadOrdner();
+        // Benutzer entscheiden lassen, ob dieser Ordner genutzt werden soll
         downloadDir = frageNachDownloadOrdner(downloadDir);
 
         if (downloadDir == null) {
@@ -47,6 +77,7 @@ public class DownloadCleaner {
         // Kategorien aus config.txt (falls vorhanden) oder Standard laden
         KATEGORIEN = KategorieKonfiguration.laden(downloadDir);
 
+        // Hauptmenü-Schleife
         boolean running = true;
         while (running) {
             System.out.println();
@@ -84,11 +115,31 @@ public class DownloadCleaner {
         }
     }
 
+    /**
+     * Liefert einen Vorschlag für den Download-Ordner des aktuellen Benutzers.
+     * Verwendet System-Property "user.home" und hängt "Downloads" an.
+     *
+     * @return Pfad zum vorgeschlagenen Download-Ordner.
+     */
     private static Path vorschlagDownloadOrdner() {
         String userHome = System.getProperty("user.home");
         return Paths.get(userHome, "Downloads");
     }
 
+    /**
+     * Fragt den Benutzer, welcher Ordner verwendet werden soll.
+     *
+     * Regeln:
+     * - Leere Eingabe: vorgeschlagenen Ordner verwenden.
+     * - Eingabe "q" (oder "Q"): Programmabbruch, Methode liefert null.
+     * - Andere Eingabe: als Pfad interpretieren.
+     *
+     * Existenz und Verzeichnis-Eigenschaft werden geprüft. Bei ungültigem Pfad
+     * wird eine Fehlermeldung ausgegeben und null zurückgegeben.
+     *
+     * @param vorgeschlagen vorgeschlagener Ordner (z. B. Download-Ordner).
+     * @return vom Benutzer gewählter Ordner oder null bei Abbruch/Fehler.
+     */
     private static Path frageNachDownloadOrdner(Path vorgeschlagen) {
         System.out.println("Vorgeschlagener Download-Ordner: " + vorgeschlagen.toAbsolutePath());
         System.out.println("[Enter] = Vorschlag nutzen");
@@ -116,6 +167,15 @@ public class DownloadCleaner {
         return chosen;
     }
 
+    /**
+     * Analysiert den angegebenen Ordner:
+     * - zählt, wie viele Dateien in jede Kategorie fallen,
+     * - gibt das Ergebnis in der Konsole aus.
+     *
+     * Es werden nur Dateien auf der obersten Ebene betrachtet, keine Unterordner.
+     *
+     * @param downloadDir zu analysierender Ordner.
+     */
     private static void analysiereOrdner(Path downloadDir) {
         System.out.println("\nAnalysiere Ordner: " + downloadDir.toAbsolutePath());
 
@@ -137,8 +197,20 @@ public class DownloadCleaner {
     }
 
     /**
-     * Sortiert alle Dateien im Ordner nach Kategorie in Unterordner.
-     * Wenn dryRun = true, werden nur Meldungen ausgegeben, aber keine Dateien verschoben.
+     * Sortiert alle Dateien im angegebenen Ordner nach Kategorie in Unterordner.
+     *
+     * Verhalten:
+     * - Wenn dryRun = true:
+     *   - Es wird nur angezeigt, wohin jede Datei verschoben würde.
+     *   - Es werden keine Dateien verschoben.
+     *   - Es werden keine Log- oder Undo-Dateien geschrieben.
+     * - Wenn dryRun = false:
+     *   - Dateien werden physisch in Kategorie-Unterordner verschoben.
+     *   - Jede Bewegung wird in log.txt festgehalten (mit Zeitstempel).
+     *   - Die letzte Sortierung wird in undo_last_sort.txt protokolliert.
+     *
+     * @param downloadDir zu sortierender Ordner.
+     * @param dryRun      true = nur Simulation, false = echte Sortierung.
      */
     private static void sortiereOrdner(Path downloadDir, boolean dryRun) {
         System.out.println();
@@ -150,6 +222,7 @@ public class DownloadCleaner {
         Path logFile = downloadDir.resolve("log.txt");
         Path undoFile = downloadDir.resolve("undo_last_sort.txt");
 
+        // Trockenlauf: nur Anzeige, keine Änderungen am Dateisystem
         if (dryRun) {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(downloadDir)) {
                 for (Path entry : stream) {
@@ -174,7 +247,7 @@ public class DownloadCleaner {
             return;
         }
 
-        // Normale Sortierung mit Logging und Undo-Protokoll
+        // Normaler Modus: Sortierung mit Logging und Undo-Protokoll
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(downloadDir);
              BufferedWriter logWriter = Files.newBufferedWriter(logFile,
                      StandardCharsets.UTF_8,
@@ -195,11 +268,13 @@ public class DownloadCleaner {
                 String fileName = entry.getFileName().toString();
                 String kategorie = bestimmeKategorie(fileName);
 
+                // Zielordner anlegen (falls noch nicht vorhanden)
                 Path zielOrdner = downloadDir.resolve(kategorie);
                 Files.createDirectories(zielOrdner);
 
                 Path zielDatei = zielOrdner.resolve(fileName);
 
+                // Relative Pfade zur Dokumentation (robuster, falls Root verschoben wird)
                 Path relativeQuelle = downloadDir.relativize(entry);
                 Path relativeZiel = downloadDir.relativize(zielDatei);
 
@@ -211,7 +286,7 @@ public class DownloadCleaner {
                     logWriter.write(ts + " MOVE " + relativeQuelle + " -> " + relativeZiel);
                     logWriter.newLine();
 
-                    // Für Undo: Ziel | Quelle (relativ zum Download-Ordner)
+                    // Für Undo: Ziel | Quelle (jeweils relativ)
                     undoWriter.write(relativeZiel + "|" + relativeQuelle);
                     undoWriter.newLine();
 
@@ -234,12 +309,20 @@ public class DownloadCleaner {
     }
 
     /**
-     * Undo-light:
-     * Liest die Datei undo_last_sort.txt und versucht,
-     * die dort protokollierten Bewegungen rückgängig zu machen.
+     * Macht die letzte Sortierung nach Möglichkeit rückgängig.
      *
+     * Grundlage ist die Datei undo_last_sort.txt im Arbeitsordner.
      * Format pro Zeile:
      *   relativerZielPfad|relativerQuellPfad
+     *
+     * Dabei ist:
+     * - relativerZielPfad: wohin die Datei beim Sortieren verschoben wurde.
+     * - relativerQuellPfad: wo sie ursprünglich lag.
+     *
+     * Die Methode versucht für jede Zeile, die Datei vom Zielpfad zurück zum
+     * ursprünglichen Pfad zu bewegen. Fehlende Dateien werden übersprungen.
+     *
+     * @param downloadDir Arbeitsordner, in dem sich undo_last_sort.txt befindet.
      */
     private static void rueckgaengigMachen(Path downloadDir) {
         Path undoFile = downloadDir.resolve("undo_last_sort.txt");
@@ -267,8 +350,8 @@ public class DownloadCleaner {
                     continue;
                 }
 
-                String relZiel = parts[0].trim();   // wohin wir beim Sortieren verschoben haben
-                String relQuelle = parts[1].trim(); // wo die Datei ursprünglich lag
+                String relZiel = parts[0].trim();   // Wohin wir beim Sortieren verschoben haben
+                String relQuelle = parts[1].trim(); // Ursprünglicher Speicherort
 
                 Path zielPfad = downloadDir.resolve(relZiel);
                 Path quellPfad = downloadDir.resolve(relQuelle);
@@ -297,8 +380,13 @@ public class DownloadCleaner {
     }
 
     /**
-     * Bestimmt auf Basis der Dateiendung eine Kategorie.
-     * Delegiert an die KategorieKonfiguration (Standard + config.txt).
+     * Bestimmt anhand der Dateiendung die passende Kategorie.
+     *
+     * Delegiert die eigentliche Logik an KategorieKonfiguration, damit sowohl
+     * Standardkategorien als auch Einträge aus config.txt berücksichtigt werden.
+     *
+     * @param fileName Dateiname inkl. Endung.
+     * @return Kategoriename, z. B. "Bilder", "Dokumente", "Archive", "Java", "Sonstiges".
      */
     private static String bestimmeKategorie(String fileName) {
         if (KATEGORIEN == null) {
@@ -309,15 +397,32 @@ public class DownloadCleaner {
     }
 
     /**
-     * Hilfsmethode: zählt pro Kategorie dynamisch (alle Kategorien, die in Konfiguration vorkommen).
+     * Hilfsklasse, die zählt, wie viele Dateien in jede Kategorie fallen.
+     *
+     * Anstelle fester Felder (bilder, dokumente, …) wird eine Map verwendet.
+     * So können auch dynamische Kategorien aus config.txt problemlos mitgezählt werden.
      */
     private static class KategorieZaehler {
+        /**
+         * Map von Kategorienamen auf Zählerstand.
+         * LinkedHashMap behält die Einfügereihenfolge bei.
+         */
         private final Map<String, Integer> werte = new LinkedHashMap<>();
 
+        /**
+         * Erhöht den Zähler für die angegebene Kategorie um 1.
+         * Fehlt die Kategorie, wird sie mit dem Wert 1 neu angelegt.
+         *
+         * @param kategorie Kategoriename.
+         */
         void erhoehe(String kategorie) {
             werte.put(kategorie, werte.getOrDefault(kategorie, 0) + 1);
         }
 
+        /**
+         * Gibt alle gezählten Kategorienamen und Werte in der Konsole aus.
+         * Wenn keine Dateien gezählt wurden, wird ein entsprechender Hinweis ausgegeben.
+         */
         void druckeErgebnis() {
             System.out.println("Ergebnis:");
             if (werte.isEmpty()) {
@@ -331,27 +436,52 @@ public class DownloadCleaner {
     }
 
     /**
-     * Kapselt die Logik für Kategorien:
-     *  - Standard-Kategorien im Code
-     *  - optionale Überschreibung / Ergänzung durch config.txt
+     * Verwaltet die Zuordnung von Dateiendungen zu Kategorien.
+     *
+     * Quellen:
+     * - Standardkategorien im Code (Bilder, Dokumente, Archive, Installer, Java, Sonstiges).
+     * - Optional: Konfigurationsdatei config.txt im Arbeitsordner.
+     *
+     * Format der config.txt:
+     *   KategorieName=.ext1,.ext2,.ext3
+     *
+     * Beispiel:
+     *   Bilder=.png,.jpg,.jpeg
+     *   Dokumente=.pdf,.doc,.docx,.txt
      */
     private static class KategorieKonfiguration {
+        /**
+         * Map von Kategorienamen auf Arrays von Dateiendungen.
+         * Endungen werden in Kleinschreibung und inklusive Punkt gespeichert (z. B. ".png").
+         */
         private final Map<String, String[]> kategorien = new LinkedHashMap<>();
 
+        /**
+         * Konstruktor lädt automatisch die Standardkonfiguration.
+         */
         private KategorieKonfiguration() {
             ladeStandard();
         }
 
         /**
-         * Lädt Kategorien mit Standardwerten, ohne Config-Datei.
+         * Liefert eine Konfiguration, die nur die im Code hinterlegten Standardkategorien enthält.
+         *
+         * @return neue KategorieKonfiguration mit Standardwerten.
          */
         public static KategorieKonfiguration ladeStandardNur() {
             return new KategorieKonfiguration();
         }
 
         /**
-         * Lädt Kategorien mit Standardwerten und versucht,
-         * eine config.txt im angegebenen Ordner zu lesen.
+         * Lädt eine KategorieKonfiguration auf Basis von Standardwerten und optionaler config.txt.
+         *
+         * Verhalten:
+         * - Zuerst werden Standardkategorien gesetzt.
+         * - Wenn config.txt existiert, überschreibt sie die Standardkonfiguration vollständig.
+         * - Die Kategorie "Sonstiges" wird ggf. ergänzt, falls sie fehlt.
+         *
+         * @param basisOrdner Ordner, in dem nach config.txt gesucht wird.
+         * @return vollständig initialisierte KategorieKonfiguration.
          */
         public static KategorieKonfiguration laden(Path basisOrdner) {
             KategorieKonfiguration konfig = new KategorieKonfiguration();
@@ -364,7 +494,6 @@ public class DownloadCleaner {
                 System.out.println("Keine config.txt im Ordner gefunden. Verwende Standard-Kategorien.");
             }
 
-            // sicherstellen, dass "Sonstiges" existiert
             if (!konfig.kategorien.containsKey("Sonstiges")) {
                 konfig.kategorien.put("Sonstiges", new String[0]);
             }
@@ -372,6 +501,10 @@ public class DownloadCleaner {
             return konfig;
         }
 
+        /**
+         * Initialisiert Standardkategorien und dazugehörige Dateiendungen.
+         * Wird verwendet, wenn keine Konfigurationsdatei vorhanden ist oder gelesen werden konnte.
+         */
         private void ladeStandard() {
             kategorien.clear();
             kategorien.put("Bilder", new String[]{
@@ -396,9 +529,21 @@ public class DownloadCleaner {
             kategorien.put("Sonstiges", new String[0]);
         }
 
+        /**
+         * Liest eine Konfigurationsdatei im Format:
+         *   Kategorie=ext1,ext2,ext3
+         *
+         * Hinweise:
+         * - Zeilen, die mit '#' beginnen, werden als Kommentar ignoriert.
+         * - Leerzeilen werden ignoriert.
+         * - Dateiendungen werden getrimmt, in Kleinschreibung konvertiert und erhalten bei Bedarf einen führenden Punkt.
+         * - Bei IO-Problemen wird eine Fehlermeldung ausgegeben und wieder auf Standardkonfiguration gewechselt.
+         *
+         * @param configFile Pfad zur Konfigurationsdatei.
+         */
         private void ladeAusDatei(Path configFile) {
             try (BufferedReader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
-                kategorien.clear(); // Config überschreibt Standard vollständig
+                kategorien.clear(); // Konfig überschreibt Standard vollständig
 
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -409,7 +554,8 @@ public class DownloadCleaner {
 
                     int eqIndex = line.indexOf('=');
                     if (eqIndex <= 0) {
-                        continue; // ungültige Zeile
+                        // keine gültige "Kategorie=..."-Zeile
+                        continue;
                     }
 
                     String katName = line.substring(0, eqIndex).trim();
@@ -437,10 +583,23 @@ public class DownloadCleaner {
             }
         }
 
+        /**
+         * Bestimmt anhand des Dateinamens die passende Kategorie.
+         *
+         * Vorgehen:
+         * - Dateiname in Kleinbuchstaben umwandeln.
+         * - Alle Kategorien außer "Sonstiges" durchlaufen.
+         * - Prüfen, ob der Name mit einer der hinterlegten Endungen endet.
+         * - Bei Treffer: Kategoriename zurückgeben.
+         * - Andernfalls: "Sonstiges" als Fallback.
+         *
+         * @param fileName Dateiname inkl. Endung.
+         * @return Kategoriename oder "Sonstiges".
+         */
         public String bestimmeKategorie(String fileName) {
             String lower = fileName.toLowerCase();
 
-            // Zuerst alle Kategorien außer "Sonstiges" prüfen
+            // Alle Kategorien außer "Sonstiges" prüfen
             for (Map.Entry<String, String[]> entry : kategorien.entrySet()) {
                 String katName = entry.getKey();
                 if ("Sonstiges".equals(katName)) {
@@ -459,7 +618,7 @@ public class DownloadCleaner {
                 }
             }
 
-            // Fallback
+            // Fallback, wenn keine Kategorie passt
             return "Sonstiges";
         }
     }
