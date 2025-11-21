@@ -1,0 +1,6 @@
+# Kategorie=Endungen, durch Komma getrennt
+Bilder=.png,.jpg,.jpeg,.gif,.bmp,.webp
+Dokumente=.pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx,.odt,.md
+Archive=.zip,.rar,.7z,.tar,.gz,.iso,.img,.dmg,.vhd,.vhdx
+Installer=.exe,.msi
+Java=.jar,.class,.java
